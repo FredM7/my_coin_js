@@ -1,44 +1,8 @@
-const sha256 = require("crypto-js/sha256");
-const moment = require("moment");
+import { SHA256 } from "crypto-js";
+import moment from "moment";
+import Elliptic from "elliptic";
 
-const EC = require("elliptic").ec;
-const ec = new EC("secp256k1");
-
-class Transaction {
-    constructor(from, to, amount) {
-        this.from = from;
-        this.to = to;
-        this.amount = amount;
-    }
-
-    calculateHash() {
-        return sha256(`${this.from}${this.to}${this.amount}`).toString();
-    }
-
-    signTransaction(signingKey) {
-        if (signingKey.getPublic("hex") !== this.from) {
-            throw new Error("You cannot sign transactions for other wallets!");
-        }
-
-        const txHash = this.calculateHash();
-        const sig = signingKey.sign(txHash, "base64");
-        this.signature = sig.toDER("hex");
-    }
-
-    isValid() {
-        //Becasue we reward miners with a "from" of "null";
-        if (this.from === null) {
-            return true;
-        }
-
-        if (!this.signature || this.signature.length === 0) {
-            throw new Error("No signature in this transaction!");
-        }
-
-        const publicKey = ec.keyFromPublic(this.from, "hex");
-        return publicKey.verify(this.calculateHash(), this.signature);
-    }
-}
+const dateFormat = "YYYY-MM-DD::HH::mm:ss::SSS";
 
 class Block {
     constructor(timestamp, transactions, previousHash = "") {
@@ -50,7 +14,7 @@ class Block {
     }
 
     calculateHash() {
-        return sha256(`${this.nonce}${this.previousHash}${this.timestamp}${JSON.stringify(this.transactions)}`).toString();
+        return SHA256(`${this.nonce}${this.previousHash}${this.timestamp}${JSON.stringify(this.transactions)}`).toString();
     }
 
     mineBlock(difficulty) {
@@ -73,16 +37,52 @@ class Block {
     }
 }
 
-class Blockchain {
+export class Transaction {
+    constructor(from, to, amount) {
+        this.from = from;
+        this.to = to;
+        this.amount = amount;
+    }
+
+    calculateHash() {
+        return SHA256(`${this.from}${this.to}${this.amount}`).toString();
+    }
+
+    signTransaction(signingKey) {
+        if (signingKey.getPublic("hex") !== this.from) {
+            throw new Error("You cannot sign transactions for other wallets!");
+        }
+
+        const txHash = this.calculateHash();
+        const sig = signingKey.sign(txHash, "base64");
+        this.signature = sig.toDER("hex");
+    }
+
+    isValid() {
+        //Becasue we reward miners with a "from" of "null";
+        if (this.from === null) {
+            return true;
+        }
+
+        if (!this.signature || this.signature.length === 0) {
+            throw new Error("No signature in this transaction!");
+        }
+
+        const publicKey = Elliptic.ec("secp256k1").keyFromPublic(this.from, "hex");
+        return publicKey.verify(this.calculateHash(), this.signature);
+    }
+}
+
+export class Blockchain {
     constructor() {
-        this.difficulty = 2;
+        this.difficulty = 3;
         this.chain = [this.createGenesisBlock()];
         this.pendingTransactions = [];
         this.miningReward = 100;
     }
 
     createGenesisBlock() {
-        return new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), [], "0");
+        return new Block(moment().format(dateFormat), [], "0");
     }
 
     getLatestBlock() {
@@ -105,7 +105,7 @@ class Blockchain {
         //is impossible because there are way too many transactions.
         //The block size should also probably not surpass +- 1MB...
         //So, miners really get to choose which transactions they include and which they dont.
-        let block = new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), this.pendingTransactions, this.getLatestBlock().hash);
+        let block = new Block(moment().format(dateFormat), this.pendingTransactions, this.getLatestBlock().hash);
         block.mineBlock(this.difficulty);
         
         console.log("Block successfully mined!");
@@ -180,6 +180,3 @@ class Blockchain {
         return true;
     }
 }
-
-module.exports.Blockchain = Blockchain;
-module.exports.Transaction = Transaction;

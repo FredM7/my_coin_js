@@ -4,8 +4,10 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "node ./app/main.js",
-    "keygen": "node ./app/keygen.js"
+    "start": "node ./build/main.js",
+    "dev": "nodemon --exec babel-node ./app/main.js",
+    "keygen": "babel-node ./app/keygen.js",
+    "build": "babel ./app --out-dir ./build"
   },
   "keywords": [],
   "author": "",
@@ -14,5 +16,13 @@
     "crypto-js": "^4.0.0",
     "elliptic": "^6.5.2",
     "moment": "^2.26.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.10.1",
+    "@babel/core": "^7.10.2",
+    "@babel/node": "^7.10.1",
+    "@babel/preset-env": "^7.10.2",
+    "nodemon": "^2.0.4",
+    "rimraf": "^3.0.2"
   }
 }
