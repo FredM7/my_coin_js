@@ -1,11 +1,42 @@
 const sha256 = require("crypto-js/sha256");
 const moment = require("moment");
 
+const EC = require("elliptic").ec;
+const ec = new EC("secp256k1");
+
 class Transaction {
     constructor(from, to, amount) {
         this.from = from;
         this.to = to;
         this.amount = amount;
+    }
+
+    calculateHash() {
+        return sha256(`${this.from}${this.to}${this.amount}`).toString();
+    }
+
+    signTransaction(signingKey) {
+        if (signingKey.getPublic("hex") !== this.from) {
+            throw new Error("You cannot sign transactions for other wallets!");
+        }
+
+        const txHash = this.calculateHash();
+        const sig = signingKey.sign(txHash, "base64");
+        this.signature = sig.toDER("hex");
+    }
+
+    isValid() {
+        //Becasue we reward miners with a "from" of "null";
+        if (this.from === null) {
+            return true;
+        }
+
+        if (!this.signature || this.signature.length === 0) {
+            throw new Error("No signature in this transaction!");
+        }
+
+        const publicKey = ec.keyFromPublic(this.from, "hex");
+        return publicKey.verify(this.calculateHash(), this.signature);
     }
 }
 
@@ -19,15 +50,26 @@ class Block {
     }
 
     calculateHash() {
-        return sha256(`${this.nonce}${this.previousHash}${this.timestamp}${JSON.stringify(this.data)}`).toString();
+        return sha256(`${this.nonce}${this.previousHash}${this.timestamp}${JSON.stringify(this.transactions)}`).toString();
     }
 
     mineBlock(difficulty) {
         //Proof of work: must start with certain amount of 7's.
         while (this.hash.substring(0, difficulty) !== "7".repeat(difficulty)) {
-            this.hash = this.calculateHash();
             this.nonce++; //Maybe this can be a much better random.
+            this.hash = this.calculateHash();
         }
+    }
+
+    isTransactionsValid() {
+        for (const tx of this.transactions) {
+            //console.log("tx", tx);
+            if (!tx.isValid()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 
@@ -36,11 +78,11 @@ class Blockchain {
         this.difficulty = 2;
         this.chain = [this.createGenesisBlock()];
         this.pendingTransactions = [];
-        this.miningReward = 1;
+        this.miningReward = 100;
     }
 
     createGenesisBlock() {
-        return new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), "Genesis block", "0");
+        return new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), [], "0");
     }
 
     getLatestBlock() {
@@ -56,17 +98,22 @@ class Blockchain {
     //     this.chain.push(newBlock);
     // }
     minePendingTransactions(minerAddress) {
+        const tx = new Transaction(null, minerAddress, this.miningReward);
+        this.pendingTransactions.push(tx);
+
         //In real world cryptocurrencies, adding all pending transactions to a block
         //is impossible because there are way too many transactions.
         //The block size should also probably not surpass +- 1MB...
         //So, miners really get to choose which transactions they include and which they dont.
-        let block = new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), this.pendingTransactions);
+        let block = new Block(moment().format("YYYY-MM-DD::HH::mm:ss"), this.pendingTransactions, this.getLatestBlock().hash);
         block.mineBlock(this.difficulty);
+        
         console.log("Block successfully mined!");
         this.chain.push(block);
 
         this.pendingTransactions = [
-            new Transaction(null, minerAddress, this.miningReward)
+            //From = null.
+            //new Transaction(null, minerAddress, this.miningReward)
         ];
 
         //Now, we can really change the code adn givce ourselves more coins,
@@ -74,7 +121,15 @@ class Blockchain {
         //and other nodes won't accept the change and ignore you.
     }
 
-    createTransaction(transaction) {
+    addTransaction(transaction) {
+        if (!transaction.from || !transaction.to) {
+            throw new Error("Transaction must have 'from' & 'to' address!");
+        }
+
+        if (!transaction.isValid()) {
+            throw new Error("Cannot add invalid transaction to the chain!");
+        }
+
         this.pendingTransactions.push(transaction);
     }
 
@@ -103,12 +158,21 @@ class Blockchain {
 
             //console.log("currentBlock", currentBlock);
 
+            if (!currentBlock.isTransactionsValid()) {
+                //console.log("1");
+                return false;
+            }
+
+            // console.log("a", currentBlock.hash);
+            // console.log("b", currentBlock.calculateHash());
             if (currentBlock.hash !== currentBlock.calculateHash()) {
+                //console.log("2");
                 return false;
             }
 
             //console.log("previousBlock", previousBlock);
             if (previousBlock != null && currentBlock.previousHash !== previousBlock.hash) {
+                //console.log("3");
                 return false;
             }
         }
@@ -117,16 +181,5 @@ class Blockchain {
     }
 }
 
-let my_coin = new Blockchain();
-my_coin.createTransaction(new Transaction("1", "2", 10));
-my_coin.createTransaction(new Transaction("2", "1", 3));
-
-console.log("Starting the mining process...");
-my_coin.minePendingTransactions("3");
-console.log("3's balance is:", my_coin.getAddressBalance("3"));
-
-console.log("Starting the mining process...");
-my_coin.minePendingTransactions("3");
-console.log("3's balance is:", my_coin.getAddressBalance("3"));
-console.log("2's balance is:", my_coin.getAddressBalance("2"));
-console.log("1's balance is:", my_coin.getAddressBalance("1"));
+module.exports.Blockchain = Blockchain;
+module.exports.Transaction = Transaction;
